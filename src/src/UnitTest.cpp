@@ -8,13 +8,21 @@
 #include <assert.h>
 #include <iostream>
 #include <stdexcept>
+#include <string>
+#include <sstream>
+#include <fstream>
 
 int main() {
 	UnitTest myUnitTest;
-//	myUnitTest.runSuperBlockTest();
-//	myUnitTest.runFreeBlockListTest();
-//	myUnitTest.runINodeListTest();
+//	ofstream out("out.txt");
+//	streambuf *coutbuf = std::cout.rdbuf(); //save old buf
+//	cout.rdbuf(out.rdbuf()); //redirect std::cout to out.txt!
+	myUnitTest.runSuperBlockTest();
+	myUnitTest.runFreeBlockListTest();
+	myUnitTest.runINodeListTest();
 	myUnitTest.runDirectoryTest();
+//	std::cout.rdbuf(coutbuf); //reset to standard output again
+
 }
 
 void UnitTest::runDirectoryTest() {
@@ -38,8 +46,8 @@ void UnitTest::runDirectoryTest() {
 	INodeList* iNodeList[driveSizeLength * blockSizeLength];
 	Directory* directory[driveSizeLength * blockSizeLength];
 
-	for (int i=2;i<driveSizeLength;i++) {
-		for (int j=2;j<blockSizeLength;j++) {
+	for (int i=0;i<driveSizeLength;i++) {
+		for (int j=0;j<blockSizeLength;j++) {
 			cout << "****** TESTING DIRECTORY " << ((i*3) + j) << " *****" << endl;
 			cout << "Creating HDD of size " << driveSize[i] << endl;
 			hdd[(i*3) + j] = new HDD(driveSize[i]);
@@ -163,6 +171,7 @@ void UnitTest::runDirectoryTest() {
 				}
 			}
 			assert (iNodeList[(i*3) + j]->getNumberOfFreeINodes() == numberOfFreeNodesAft);
+
 			cout << "Testing - Deleting the first half of directorys" << endl;
 			for (int loop=0;loop<25;loop++) {
 				for (int loop2=0;loop2<5;loop2++) {
@@ -172,6 +181,7 @@ void UnitTest::runDirectoryTest() {
 					}
 				}
 			}
+
 			assert (iNodeList[(i*3) + j]->getNumberOfFreeINodes() == numberOfFreeNodesAft);
 			cout << "Testing - Deleting the second half of directorys" << endl;
 			for (int loop=0;loop<25;loop++) {
@@ -183,8 +193,521 @@ void UnitTest::runDirectoryTest() {
 				}
 			}
 			assert (iNodeList[(i*3) + j]->getNumberOfFreeINodes() == numberOfFreeNodesBef);
+
+			string level1dirNames[3];
+			string level1fileNames[3][6];
+			string level1fileData[3][6];
+
+			string level2dirNames[3][3];
+			string level2fileNames[3][3][6];
+			string level2fileData[3][3][6];
+
+			string level3dirNames[3][3][3];
+			string level3fileNames[3][3][3][6];
+			string level3fileData[3][3][3][6];
+			cout << "Creating 3 directorys each with 3 directorys each with 3 directorys creating 6 files in each" << endl;
+			for (int loop=0;loop<3;loop++){
+				level1dirNames[loop] = "dir" + to_string(loop);
+				cout << "Creating level1 dir " << level1dirNames[loop] << endl;
+				assert (directory[(i*3) + j]->createDir("",level1dirNames[loop]) == true);
+				for (int fileLoop=0;fileLoop<6;fileLoop++) {
+					level1fileNames[loop][fileLoop] = "file" + to_string(fileLoop);
+					level1fileData[loop][fileLoop] = createRandomFile();
+					cout << "Creating level1 files " << level1dirNames[loop] << "/" << level1fileNames[loop][fileLoop] << endl;
+					assert (directory[(i*3) + j]->createFile(level1dirNames[loop]+"/",level1fileNames[loop][fileLoop],level1fileData[loop][fileLoop]) == true);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					level2dirNames[loop][loop2] = "dir" + to_string(loop2);
+					cout << "Creating level2 dir " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << endl;
+					assert (directory[(i*3) + j]->createDir(level1dirNames[loop]+"/",level2dirNames[loop][loop2]) == true);
+					for (int fileLoop=0;fileLoop<6;fileLoop++) {
+						level2fileNames[loop][loop2][fileLoop] = "file" + to_string(fileLoop);
+						level2fileData[loop][loop2][fileLoop] = createRandomFile();
+						cout << "Creating level2 files " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level2fileNames[loop][loop2][fileLoop] << endl;
+						assert (directory[(i*3) + j]->createFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level2fileNames[loop][loop2][fileLoop],level2fileData[loop][loop2][fileLoop]) == true);
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						level3dirNames[loop][loop2][loop3] = "dir" + to_string(loop3);
+						cout << "Creating level3 dir " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3] << endl;
+						assert (directory[(i*3) + j]->createDir(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level3dirNames[loop][loop2][loop3]) == true);
+						for (int fileLoop=0;fileLoop<6;fileLoop++) {
+							level3fileNames[loop][loop2][loop3][fileLoop] = "file" + to_string(fileLoop);
+							level3fileData[loop][loop2][loop3][fileLoop] = createRandomFile();
+							cout << "Creating level3 files " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3] << "/" << level3fileNames[loop][loop2][loop3][fileLoop] << endl;
+							assert (directory[(i*3) + j]->createFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",level3fileNames[loop][loop2][loop3][fileLoop],level3fileData[loop][loop2][loop3][fileLoop]) == true);
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Reading the files from the disk to make sure they are the same" << endl;
+			string file;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop++) {
+					cout << "reading file " << level1dirNames[loop] << "/" << level1fileNames[loop][fileLoop] << endl;
+					directory[(i*3) + j]->readFile(level1dirNames[loop]+"/",level1fileNames[loop][fileLoop],file);
+					assert (file == level1fileData[loop][fileLoop]);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop++) {
+						cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level2fileNames[loop][loop2][fileLoop] << endl;
+						directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level2fileNames[loop][loop2][fileLoop],file);
+						assert (file == level2fileData[loop][loop2][fileLoop]);
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop++) {
+							cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3] << "/" << level3fileNames[loop][loop2][loop3][fileLoop] << endl;
+							directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",level3fileNames[loop][loop2][loop3][fileLoop],file);
+							assert (file == level3fileData[loop][loop2][loop3][fileLoop]);
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Deleting half the files from the disk" << endl;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+					cout << "deleting file " << level1dirNames[loop] << "/" << level1fileNames[loop][fileLoop] << endl;
+					assert (directory[(i*3) + j]->deleteFile(level1dirNames[loop]+"/",level1fileNames[loop][fileLoop]) == true);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+						cout << "deleting file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level2fileNames[loop][loop2][fileLoop] << endl;
+						assert (directory[(i*3) + j]->deleteFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level2fileNames[loop][loop2][fileLoop]) == true);
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+							cout << "deleting file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3] << "/" << level3fileNames[loop][loop2][loop3][fileLoop] << endl;
+							assert (directory[(i*3) + j]->deleteFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",level3fileNames[loop][loop2][loop3][fileLoop]) == true);
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Trying to read those files from the disk - this should not be possible" << endl;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+					cout << "reading file " << level1dirNames[loop] << "/" << level1fileNames[loop][fileLoop] << endl;
+					assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/",level1fileNames[loop][fileLoop],file) == false);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+						cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level2fileNames[loop][loop2][fileLoop] << endl;
+						assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level2fileNames[loop][loop2][fileLoop],file) == false);
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+							cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3] << "/" << level3fileNames[loop][loop2][loop3][fileLoop] << endl;
+							assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",level3fileNames[loop][loop2][loop3][fileLoop],file) == false);
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Reading the remaining files" << endl;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=1;fileLoop<6;fileLoop = fileLoop+2) {
+					cout << "reading file " << level1dirNames[loop] << "/" << level1fileNames[loop][fileLoop] << endl;
+					directory[(i*3) + j]->readFile(level1dirNames[loop]+"/",level1fileNames[loop][fileLoop],file);
+					assert (file == level1fileData[loop][fileLoop]);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=1;fileLoop<6;fileLoop = fileLoop+2) {
+						cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level2fileNames[loop][loop2][fileLoop] << endl;
+						directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level2fileNames[loop][loop2][fileLoop],file);
+						assert (file == level2fileData[loop][loop2][fileLoop]);
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=1;fileLoop<6;fileLoop = fileLoop+2) {
+							cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3] << "/" << level3fileNames[loop][loop2][loop3][fileLoop] << endl;
+							directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",level3fileNames[loop][loop2][loop3][fileLoop],file);
+							assert (file == level3fileData[loop][loop2][loop3][fileLoop]);
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Recreating the deleted files" << endl;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+					cout << "creating file " << level1dirNames[loop] << "/" << level1fileNames[loop][fileLoop] << endl;
+					assert (directory[(i*3) + j]->createFile(level1dirNames[loop]+"/",level1fileNames[loop][fileLoop],level1fileData[loop][fileLoop]) == true);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+						cout << "creating file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level2fileNames[loop][loop2][fileLoop] << endl;
+						assert (directory[(i*3) + j]->createFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level2fileNames[loop][loop2][fileLoop],level2fileData[loop][loop2][fileLoop]) == true);
+
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+							cout << "creating file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3] << "/" << level3fileNames[loop][loop2][loop3][fileLoop] << endl;
+							assert (directory[(i*3) + j]->createFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",level3fileNames[loop][loop2][loop3][fileLoop],level3fileData[loop][loop2][loop3][fileLoop]) == true);
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Renaming the files" << endl;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+					string newName = "renamedFile" + to_string(fileLoop);
+					cout << "renaming file " << level1dirNames[loop] << "/" << level1fileNames[loop][fileLoop] << " to " << newName << endl;
+					assert (directory[(i*3) + j]->renameFile(level1dirNames[loop]+"/",level1fileNames[loop][fileLoop],newName) == true);
+					level1fileNames[loop][fileLoop] = newName;
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+						string newName = "renamedFile" + to_string(fileLoop);
+						cout << "renaming file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level2fileNames[loop][loop2][fileLoop] << " to " << newName << endl;
+						assert (directory[(i*3) + j]->renameFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level2fileNames[loop][loop2][fileLoop],newName) == true);
+						level2fileNames[loop][loop2][fileLoop] = newName;
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+							string newName = "renamedFile" + to_string(fileLoop);
+							cout << "renaming file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3] << "/" << level3fileNames[loop][loop2][loop3][fileLoop] << " to " << newName << endl;
+							assert (directory[(i*3) + j]->renameFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",level3fileNames[loop][loop2][loop3][fileLoop],newName) == true);
+							level3fileNames[loop][loop2][loop3][fileLoop] = newName;
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Reading the renamed files to check they are still ok" << endl;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+					cout << "reading file " << level1dirNames[loop] << "/" << level1fileNames[loop][fileLoop] << endl;
+					assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/",level1fileNames[loop][fileLoop],file) == true);
+					assert (file == level1fileData[loop][fileLoop]);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+						cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level2fileNames[loop][loop2][fileLoop] << endl;
+						assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level2fileNames[loop][loop2][fileLoop],file) == true);
+						assert (file == level2fileData[loop][loop2][fileLoop]);
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+							cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3] << "/" << level3fileNames[loop][loop2][loop3][fileLoop] << endl;
+							assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",level3fileNames[loop][loop2][loop3][fileLoop],file) == true);
+							assert (file == level3fileData[loop][loop2][loop3][fileLoop]);
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Trying to read the old files - this should cause an error" << endl;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+					string newFile = "file" + to_string(fileLoop);
+					cout << "reading file " << level1dirNames[loop] << "/" << newFile << endl;
+					assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/",newFile,file) == false);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+						string newFile = "file" + to_string(fileLoop);
+						cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << newFile << endl;
+						assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",newFile,file) == false);
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+							string newFile = "file" + to_string(fileLoop);
+							cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3] << "/" << newFile << endl;
+							assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",newFile,file) == false);
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Trying to read some directorys - this should cause an error" << endl;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+					string newFile = "file" + to_string(fileLoop);
+					cout << "reading file " << level1dirNames[loop] << endl;
+					assert (directory[(i*3) + j]->readFile("",level1dirNames[loop],file) == false);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+						string newFile = "file" + to_string(fileLoop);
+						cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << endl;
+						assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/",level2dirNames[loop][loop2],file) == false);
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+							string newFile = "file" + to_string(fileLoop);
+							cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3] << "/" << endl;
+							assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level3dirNames[loop][loop2][loop3],file) == false);
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Moving all files to their parent directories" << endl;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+					cout << "moving file " << level1dirNames[loop] << "/" << level1fileNames[loop][fileLoop];
+					string newFile = level1fileNames[loop][fileLoop] + "Moved" + level1dirNames[loop];
+					cout << " to " << "/" << newFile << endl;
+					assert (directory[(i*3) + j]->moveFile(level1dirNames[loop]+"/",level1fileNames[loop][fileLoop],"",newFile) == true);
+					cout << "Checking old file does not exist" << endl;
+					assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/",level1fileNames[loop][fileLoop],file) == false);
+					level1fileNames[loop][fileLoop] = newFile;
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+						cout << "moving file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level2fileNames[loop][loop2][fileLoop];
+						string newFile = level2fileNames[loop][loop2][fileLoop] + "Moved" + level2dirNames[loop][loop2];
+						cout << " to " << level1dirNames[loop] << "/" << newFile << endl;
+						assert (directory[(i*3) + j]->moveFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level2fileNames[loop][loop2][fileLoop],level1dirNames[loop]+"/",newFile) == true);
+						cout << "Checking old file does not exist" << endl;
+						assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level2fileNames[loop][loop2][fileLoop],file) == false);
+						level2fileNames[loop][loop2][fileLoop] = newFile;
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+							cout << "moving file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3] << "/" << level3fileNames[loop][loop2][loop3][fileLoop];
+							string newFile = level3fileNames[loop][loop2][loop3][fileLoop] + "Moved" + level3dirNames[loop][loop2][loop3];
+							cout << " to " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << newFile << endl;
+							assert (directory[(i*3) + j]->moveFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",level3fileNames[loop][loop2][loop3][fileLoop],level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",newFile) == true);
+							cout << "Checking old file does not exist" << endl;
+							assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",level3fileNames[loop][loop2][loop3][fileLoop],file) == false);
+							level3fileNames[loop][loop2][loop3][fileLoop] = newFile;
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Checking moved files can be read" << endl;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+					cout << "reading file " << level1fileNames[loop][fileLoop] << endl;
+					assert (directory[(i*3) + j]->readFile("",level1fileNames[loop][fileLoop],file) == true);
+					assert (level1fileData[loop][fileLoop] == file);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+						cout << "reading file " << level1dirNames[loop] << "/" << level2fileNames[loop][loop2][fileLoop] << endl;
+						assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/",level2fileNames[loop][loop2][fileLoop],file) == true);
+						assert (level2fileData[loop][loop2][fileLoop] == file);
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+							cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3fileNames[loop][loop2][loop3][fileLoop] << endl;
+							assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level3fileNames[loop][loop2][loop3][fileLoop],file) == true);
+							assert (level3fileData[loop][loop2][loop3][fileLoop] == file);
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Testing rewriting files " << endl;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+					cout << "rewriting file " << level1fileNames[loop][fileLoop] << endl;
+					level1fileData[loop][fileLoop] = createRandomFile();
+					assert (directory[(i*3) + j]->rewriteFile("",level1fileNames[loop][fileLoop],level1fileData[loop][fileLoop]) == true);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+						cout << "rewriting file " << level1dirNames[loop] << "/" << level2fileNames[loop][loop2][fileLoop] << endl;
+						level2fileData[loop][loop2][fileLoop] = createRandomFile();
+						assert (directory[(i*3) + j]->rewriteFile(level1dirNames[loop]+"/",level2fileNames[loop][loop2][fileLoop],level2fileData[loop][loop2][fileLoop]) == true);
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+							cout << "rewriting file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3fileNames[loop][loop2][loop3][fileLoop] << endl;
+							level3fileData[loop][loop2][loop3][fileLoop] = createRandomFile();
+							assert (directory[(i*3) + j]->rewriteFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level3fileNames[loop][loop2][loop3][fileLoop],level3fileData[loop][loop2][loop3][fileLoop]) == true);
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Reading rewriten files " << endl;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+					cout << "reading file " << level1fileNames[loop][fileLoop] << endl;
+					assert (directory[(i*3) + j]->readFile("",level1fileNames[loop][fileLoop],file) == true);
+					assert (level1fileData[loop][fileLoop] == file);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+						cout << "reading file " << level1dirNames[loop] << "/" << level2fileNames[loop][loop2][fileLoop] << endl;
+						assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/",level2fileNames[loop][loop2][fileLoop],file) == true);
+						assert (level2fileData[loop][loop2][fileLoop] == file);
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+							cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3fileNames[loop][loop2][loop3][fileLoop] << endl;
+							assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level3fileNames[loop][loop2][loop3][fileLoop],file) == true);
+							assert (level3fileData[loop][loop2][loop3][fileLoop] == file);
+						}
+					}
+				}
+			}
+			string copylevel1fileNames[3][6];
+			string copylevel1fileData[3][6];
+
+			string copylevel2fileNames[3][3][6];
+			string copylevel2fileData[3][3][6];
+
+			string copylevel3fileNames[3][3][3][6];
+			string copylevel3fileData[3][3][3][6];
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Copying files " << endl;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+					copylevel1fileNames[loop][fileLoop] = level1fileNames[loop][fileLoop] + "COPY";
+					cout << "copying file " << level1fileNames[loop][fileLoop] << " to " << copylevel1fileNames[loop][fileLoop] << endl;
+					assert (directory[(i*3) + j]->copyFile("",level1fileNames[loop][fileLoop],level1dirNames[loop]+"/",copylevel1fileNames[loop][fileLoop]) == true);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+						copylevel2fileNames[loop][loop2][fileLoop] = level2fileNames[loop][loop2][fileLoop] + "COPY";
+						cout << "copying file " << level1dirNames[loop] << "/" << level2fileNames[loop][loop2][fileLoop] << " to " << copylevel2fileNames[loop][loop2][fileLoop] << endl;
+						assert (directory[(i*3) + j]->copyFile(level1dirNames[loop]+"/",level2fileNames[loop][loop2][fileLoop],level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",copylevel2fileNames[loop][loop2][fileLoop]) == true);
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+							copylevel3fileNames[loop][loop2][loop3][fileLoop] = level3fileNames[loop][loop2][loop3][fileLoop] + "COPY";
+							cout << "copying file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3fileNames[loop][loop2][loop3][fileLoop] << " to " << copylevel3fileNames[loop][loop2][loop3][fileLoop] << endl;
+							assert (directory[(i*3) + j]->copyFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level3fileNames[loop][loop2][loop3][fileLoop],level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",copylevel3fileNames[loop][loop2][loop3][fileLoop]) == true);
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Rewriting Copied files " << endl;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+					cout << "rewriting file " << level1dirNames[loop] << "/" << copylevel1fileNames[loop][fileLoop] << endl;
+					copylevel1fileData[loop][fileLoop] = createRandomFile();
+					assert (directory[(i*3) + j]->rewriteFile(level1dirNames[loop]+"/",copylevel1fileNames[loop][fileLoop],copylevel1fileData[loop][fileLoop]) == true);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+						cout << "rewriting file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2][fileLoop] << "/" << copylevel2fileNames[loop][loop2][fileLoop] << endl;
+						copylevel2fileData[loop][loop2][fileLoop] = createRandomFile();
+						assert (directory[(i*3) + j]->rewriteFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",copylevel2fileNames[loop][loop2][fileLoop],copylevel2fileData[loop][loop2][fileLoop]) == true);
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+							cout << "rewriting file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3][fileLoop] << "/" << copylevel3fileNames[loop][loop2][loop3][fileLoop] << endl;
+							copylevel3fileData[loop][loop2][loop3][fileLoop] = createRandomFile();
+							assert (directory[(i*3) + j]->rewriteFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",copylevel3fileNames[loop][loop2][loop3][fileLoop],copylevel3fileData[loop][loop2][loop3][fileLoop]) == true);
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Reading the original and copied files and checking they are not the same" << endl;
+			string file2;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+					cout << "reading file " << level1fileNames[loop][fileLoop] << endl;
+					assert (directory[(i*3) + j]->readFile("",level1fileNames[loop][fileLoop],file) == true);
+					assert (level1fileData[loop][fileLoop] == file);
+					cout << "reading file " << level1dirNames[loop] << "/" << copylevel1fileNames[loop][fileLoop] << endl;
+					assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/",copylevel1fileNames[loop][fileLoop],file2) == true);
+					assert (copylevel1fileData[loop][fileLoop] == file2);
+					assert (file!=file2);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+						cout << "reading file " << level1dirNames[loop] << "/" << level2fileNames[loop][loop2][fileLoop] << endl;
+						assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/",level2fileNames[loop][loop2][fileLoop],file) == true);
+						assert (level2fileData[loop][loop2][fileLoop] == file);
+						cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << copylevel2fileNames[loop][loop2][fileLoop] << endl;
+						assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",copylevel2fileNames[loop][loop2][fileLoop],file2) == true);
+						assert (copylevel2fileData[loop][loop2][fileLoop] == file2);
+						assert (file!=file2);
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+							cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3fileNames[loop][loop2][loop3][fileLoop] << endl;
+							assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level3fileNames[loop][loop2][loop3][fileLoop],file) == true);
+							assert (level3fileData[loop][loop2][loop3][fileLoop] == file);
+							cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3] << "/" << copylevel3fileNames[loop][loop2][loop3][fileLoop] << endl;
+							assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",copylevel3fileNames[loop][loop2][loop3][fileLoop],file2) == true);
+							assert (copylevel3fileData[loop][loop2][loop3][fileLoop] == file2);
+							assert (file!=file2);
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Make a hard link to the original file " << endl;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+					cout << "making hard link to file " << level1fileNames[loop][fileLoop];
+					cout << " in - " << level1dirNames[loop] << "/" << "hard"+to_string(fileLoop) << endl;
+					assert (directory[(i*3) + j]->makeHardLinkToFile("",level1fileNames[loop][fileLoop],level1dirNames[loop]+"/","hard"+to_string(fileLoop)) == true);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+						cout << "making hard link to file " << level1dirNames[loop] << "/" << level2fileNames[loop][loop2][fileLoop];
+						cout << " in - " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << "hard"+to_string(loop)+to_string(fileLoop) << endl;
+						assert (directory[(i*3) + j]->makeHardLinkToFile(level1dirNames[loop]+"/",level2fileNames[loop][loop2][fileLoop],level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/","hard"+to_string(loop)+to_string(fileLoop)) == true);
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+							cout << "making hard link to file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3fileNames[loop][loop2][loop3][fileLoop];
+							cout << " in - " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3] << "/" << "hard"+to_string(loop)+to_string(loop2)+to_string(fileLoop) << endl;
+							assert (directory[(i*3) + j]->makeHardLinkToFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level3fileNames[loop][loop2][loop3][fileLoop],level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/","hard"+to_string(loop)+to_string(loop2)+to_string(fileLoop)) == true);
+						}
+					}
+				}
+			}
+			cout << "--------------------------------------------------------------------------------------" << endl;
+			cout << "Reading the originals and the links checking they are the same" << endl;
+			for (int loop=0;loop<3;loop++){
+				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+					cout << "reading file " << level1fileNames[loop][fileLoop] << endl;
+					assert (directory[(i*3) + j]->readFile("",level1fileNames[loop][fileLoop],file) == true);
+					assert (level1fileData[loop][fileLoop] == file);
+					cout << "reading file " << level1dirNames[loop] << "/" << "hard"+to_string(fileLoop) << endl;
+					assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/","hard"+to_string(fileLoop),file2) == true);
+					assert (level1fileData[loop][fileLoop] == file2);
+				}
+				for (int loop2=0;loop2<3;loop2++){
+					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+						cout << "reading file " << level1dirNames[loop] << "/" << level2fileNames[loop][loop2][fileLoop] << endl;
+						assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/",level2fileNames[loop][loop2][fileLoop],file) == true);
+						assert (level2fileData[loop][loop2][fileLoop] == file);
+						cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << "hard"+to_string(loop)+to_string(fileLoop) << endl;
+						assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/","hard"+to_string(loop)+to_string(fileLoop),file2) == true);
+						assert (level2fileData[loop][loop2][fileLoop] == file2);
+					}
+					for (int loop3=0;loop3<3;loop3++){
+						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
+							cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3fileNames[loop][loop2][loop3][fileLoop] << endl;
+							assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level3fileNames[loop][loop2][loop3][fileLoop],file) == true);
+							assert (level3fileData[loop][loop2][loop3][fileLoop] == file);
+							cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3] << "/" << "hard"+to_string(loop)+to_string(loop2)+to_string(fileLoop) << endl;
+							assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/","hard"+to_string(loop)+to_string(loop2)+to_string(fileLoop),file2) == true);
+							assert (level3fileData[loop][loop2][loop3][fileLoop] == file2);
+						}
+					}
+				}
+			}
+
+
+
+
+
 		}
 	}
+}
+
+string UnitTest::createRandomFile() {
+	stringstream returnString;
+	for (int i=0;i<rand()%1500000;i++) {
+		int asciiVal = rand()%256;
+		int asciiChar = asciiVal;
+		returnString << asciiChar;
+	}
+	return returnString.str();
 }
 
 void UnitTest::runINodeListTest() {

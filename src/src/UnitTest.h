@@ -2,6 +2,7 @@
 #include "HDD.h"
 #include "SuperBlock.h"
 #include <stdlib.h>
+#include <string>
 
 using namespace std;
 
@@ -17,4 +18,5 @@ public:
 	void runSuperBlockTest();
 	void runINodeListTest();
 	void runDirectoryTest();
+	string createRandomFile();
 };

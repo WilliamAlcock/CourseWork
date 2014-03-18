@@ -43,13 +43,13 @@ public:
     // INode setters
     void removeBlockFromINode(int iNodeNumber);								// Tested
     void addBlockToINode(int iNodeNumber, int block);						// Tested
-    void setINodeSize(int iNodeNumber, long newSize);						// Needs Testing
+    void setINodeSize(int iNodeNumber, long newSize);						// Tested
     void lockINode(int iNodeNumber);										// Needs Testing
     void unLockINode(int iNodeNumber);										// Needs Testing
     // INode getters
-    bool isINodeDirectory(int iNodeNumber);									// Needs Testing
+    bool isINodeDirectory(int iNodeNumber);									// Tested
     bool getINodeLockStatus(int iNodeNumber);								// Needs Testing
-    long getINodeSize(int iNodeNumber);										// Needs Testing
+    long getINodeSize(int iNodeNumber);										// Tested
     long getINodeCreationTime(int iNodeNumber);								// Not Implemented
     long getINodeModificationTime(int iNodeNumber);							// Not Implemented
     long getINodeAccessTime(int iNodeNumber);								// Not Implemented

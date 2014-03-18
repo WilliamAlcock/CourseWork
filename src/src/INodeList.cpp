@@ -112,6 +112,7 @@ int INodeList::writeNewINode(bool _directory, long _size, int firstBlock) {
 			while (((firstFreeINode + increment) < lastUsedINode) && (newFirstFreeINode == firstFreeINode)) {
 				currentINode = readINode(firstFreeINode + increment);
 				if (!currentINode.data.used) newFirstFreeINode = firstFreeINode + increment;
+				increment++;
 			}
 			if (firstFreeINode + increment == lastUsedINode) {
 				firstFreeINode = lastUsedINode;
@@ -146,7 +147,6 @@ void INodeList::removeLinkFromINode(int iNodeNumber) {
 	currentINode.data.count--;
 	// if the count is 0 the iNode is no longer being used
 	if (currentINode.data.count == 0) {
-
 		// free the directly referenced blocks
 		for (int i=0;i<std::min(currentINode.data.numberOfBlocks,10);i++) {
 			freeBlockList->freeBlock(currentINode.data.block[i]);

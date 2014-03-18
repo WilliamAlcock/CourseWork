@@ -9,6 +9,12 @@
 
 using namespace std;
 
+const int fileHeaderSize = 4;
+union FileHeaderData {
+	int lengthOfBlock;
+	char c[4];
+};
+
 const int directoryEntrySize = 8;
 const int directoryHeaderSize = 8;
 struct DirectoryHeaderStruct {
@@ -27,10 +33,6 @@ union DirectoryEntryData {
 	DirectoryEntryStruct data;
 	char c[directoryEntrySize];
 };
-struct TreeQueuePair {
-	int iNodeRef;
-	string path;
-};
 
 class Directory {
 public:
@@ -39,22 +41,26 @@ public:
     void read();
     void write();
     // file operations
-    void createFile();			// Needs Implementing
-    void deleteFile();			// Needs Implementing
-    void renameFile();			// Needs Implementing
-    void moveFile();			// Needs Implementing
-    void copyFile();			// Needs Implementing
-    void makeHardLinkToFile();	// Needs Implementing
+    bool createFile(string path, string name, string &data);									// Tested
+    bool rewriteFile(string path, string name, string &data);									// Tested
+    bool deleteFile(string path, string name);													// Tested
+    bool renameFile(string fromPath, string fromName, string toName);							// Tested
     //
-    void readFile();			// Needs Implementing
-    void openFile();			// Needs Implementing
-    void closeFile();			// Needs Implementing
+    bool moveFile(string fromPath, string fromName, string toPath, string toName);				// Tested
+    bool copyFile(string fromPath, string fromName, string toPath, string toName);				// Tested
+    bool makeHardLinkToFile(string fromPath, string fromName, string toPath, string toName);	// Tested
+    //
+    bool readFile(string path, string name, string &data);										// Tested
+    bool openFile(string path, string name, string &data);										// Needs Testing
+    bool closeFile(string path, string name);													// Needs Testing
     // directory operations
-    bool deleteDir(string path, string name);												// Tested
-    bool createDir(string path, string name);												// Tested
-    bool moveDir(string fromPath, string fromName, string toPath, string toName);			// Tested
-    bool makeHardLinkDir(string fromPath, string fromName, string toPath, string toName);	// Tested
-    bool copyDir();				// Needs Implementing
+    string listDirContents(string path);														// Tested
+    bool deleteDir(string path, string name);													// Tested	add force flag
+    bool createDir(string path, string name);													// Tested
+    bool moveDir(string fromPath, string fromName, string toPath, string toName);				// Tested
+    bool makeHardLinkDir(string fromPath, string fromName, string toPath, string toName);		// Tested
+    bool copyDir();																				// Needs Implementing
+
 private:
 	// from input
 	HDD* hdd;
@@ -64,13 +70,22 @@ private:
 	int rootINode;
 	// counters
 	bool initialised;
-	bool busy;
 	// cached directory
 	DirectoryHeaderData cachedDirectoryLastBlockHeader;
 	int cachedDirectoryNode = -1;
     map <std::string, int> cachedDirectory;
     // cached directory tree
     DirectoryTree* directoryTree;
+    // FILE
+    // write operations
+    bool writeFile(int iNodeNumber, string &data);													// Tested
+    void writeFileBlock(int blockNumber, string &data, int startPointer, int endPointer);			// Tested
+    void writeFileBlockHeader(int blockNumber, FileHeaderData fileHeaderData);						// Tested
+    // read operations
+    void readFileBlock(int blockNumber, string &data);												// Tested
+    FileHeaderData readFileBlockHeader(int blockNumber);											// Tested
+    unsigned int getDataInBlock();																	// Tested
+    // DIRECTORY
     // write operations
     void writeCachedDirectory();																	// Tested
     void writeDirectoryEntryData(DirectoryEntryData entry, int blockNumber, int lastNodePointer);	// Tested
@@ -88,6 +103,6 @@ private:
 	// getters
 	int getStartOfBlock(int blockNumber);															// Tested
 	// string operations
-	bool isNameLegal(string name);																	// Tested
-	bool isPathNameLegal(string name);																// Tested
+	bool isNameLegal(string &name);																	// Tested
+	bool isPathNameLegal(string &name);																// Tested
 };
