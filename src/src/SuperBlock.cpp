@@ -80,6 +80,8 @@ int SuperBlock::getINodeStart() const {
  * Return the Number of INodes
  */
 int SuperBlock::getNumberOfINodes() const {
+	if (!initialised) throw std::runtime_error("Super Block not Initialised");
+
 	return data.data.numberOfINodes;
 }
 
@@ -91,3 +93,13 @@ int SuperBlock::getFirstBlockStart() const {
 
 	return superBlockSize + data.data.freeBlockListSizeBytes + data.data.iNodeListBytes;
 }
+
+/*
+ * Returns the starting position of a block
+ */
+int SuperBlock::getStartOfBlock(int blockNumber) {
+	if (!initialised) throw std::runtime_error("Super Block not Initialised");
+
+	return (getFirstBlockStart() + (blockNumber * getBlockSize()));
+}
+

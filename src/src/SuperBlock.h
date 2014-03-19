@@ -29,6 +29,7 @@ public:
 	int getINodeStart() const;					// Tested
 	int getNumberOfINodes() const;				// Tested
 	int getFirstBlockStart() const;				// Tested
+	int getStartOfBlock(int blockNumber);		// Tested
 private:
 	// from input
 	HDD* hdd;

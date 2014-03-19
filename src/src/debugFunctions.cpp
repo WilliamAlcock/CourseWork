@@ -4,7 +4,7 @@
 inline void printINode(iNodeData iNode) {
 	std::cout << "Used = " << iNode.data.used << std::endl;
 	std::cout << "Directory = " << iNode.data.directory << std::endl;
-	std::cout << "Locked = " << iNode.data.locked << std::endl;
+	std::cout << "spare3 = " << iNode.data.spare3 << std::endl;
 	std::cout << "spare4 = " << iNode.data.spare4 << std::endl;
 	std::cout << "spare5 = " << iNode.data.spare5 << std::endl;
 	std::cout << "spare6 = " << iNode.data.spare6 << std::endl;

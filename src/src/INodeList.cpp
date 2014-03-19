@@ -9,6 +9,7 @@ INodeList::INodeList(HDD* _hdd, SuperBlock* _superBlock, FreeBlockList* _freeBlo
 	superBlock = _superBlock;
 	startingPosition = superBlock->getINodeStart();
 	numberOfINodes = superBlock->getNumberOfINodes();
+	lockedNodes.clear();
 	// counters
 	firstFreeINode = 0;
 	freeINodeCounter = 0;
@@ -76,7 +77,7 @@ int INodeList::writeNewINode(bool _directory, long _size, int firstBlock) {
 	iNodeData currentINode;
 	currentINode.data.used = 1;
 	if (_directory) currentINode.data.directory = 1;
-	currentINode.data.locked = 0;			// unused
+	currentINode.data.spare3 = 0;			// unused
 	currentINode.data.spare4 = 0;			// unused
 	currentINode.data.spare5 = 0;			// unused
 	currentINode.data.spare6 = 0;			// unused
@@ -126,7 +127,6 @@ int INodeList::writeNewINode(bool _directory, long _size, int firstBlock) {
 		return iNodeToReturn;
 	} else {
 		throw std::runtime_error("Disk is Full - no more free INodes !!");
-		// this should really be a print statement as its only a warning not an error !!
 	}
 }
 
@@ -297,10 +297,10 @@ void INodeList::lockINode(int iNodeNumber) {
 	iNodeData currentINode = readINode(iNodeNumber);
 
 	if (!currentINode.data.used) throw std::runtime_error("INode not in use !!");
-	if (currentINode.data.locked) throw std::runtime_error("INode already locked !!");
 
-	currentINode.data.locked = true;
-	writeINode(iNodeNumber, currentINode);
+	while (isINodeLocked(iNodeNumber)) {}
+
+	lockedNodes.insert(iNodeNumber);
 }
 
 /*
@@ -308,15 +308,15 @@ void INodeList::lockINode(int iNodeNumber) {
  */
 void INodeList::unLockINode(int iNodeNumber) {
 	if (!initialised) throw std::runtime_error("INode List not Initialised");
-	if (!isValid(iNodeNumber)) throw std::runtime_error("INode out of range");
+//	if (!isValid(iNodeNumber)) throw std::runtime_error("INode out of range");
 
-	iNodeData currentINode = readINode(iNodeNumber);
+	if (!isINodeLocked(iNodeNumber)) throw std::runtime_error("INode already locked !!");
 
-	if (!currentINode.data.used) throw std::runtime_error("INode not in use !!");
-	if (!currentINode.data.locked) throw std::runtime_error("INode already unlocked !!");
+//	iNodeData currentINode = readINode(iNodeNumber);
 
-	currentINode.data.locked = false;
-	writeINode(iNodeNumber, currentINode);
+//	if (!currentINode.data.used) throw std::runtime_error("INode not in use !!");
+
+	lockedNodes.erase(iNodeNumber);
 }
 
 // **************************** iNode getters ****************************
@@ -338,17 +338,11 @@ bool INodeList::isINodeDirectory(int iNodeNumber) {
 /*
  * Return the size the file represented by an INode
  */
-bool INodeList::getINodeLockStatus(int iNodeNumber) {
+bool INodeList::isINodeLocked(int iNodeNumber) {
 	if (!initialised) throw std::runtime_error("INode List not Initialised");
-	if (!isValid(iNodeNumber)) throw std::runtime_error("INode out of range");
 
-	iNodeData currentINode = readINode(iNodeNumber);
-
-	if (!currentINode.data.used) throw std::runtime_error("INode not in use !!");
-
-	return currentINode.data.locked;
+	return lockedNodes.count(iNodeNumber) > 0;
 }
-
 
 /*
  * Return the size the file represented by an INode

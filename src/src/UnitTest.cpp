@@ -546,96 +546,14 @@ void UnitTest::runDirectoryTest() {
 					}
 				}
 			}
-			string copylevel1fileNames[3][6];
-			string copylevel1fileData[3][6];
+//			string copylevel1fileNames[3][6];
+//			string copylevel1fileData[3][6];
 
-			string copylevel2fileNames[3][3][6];
-			string copylevel2fileData[3][3][6];
+//			string copylevel2fileNames[3][3][6];
+//			string copylevel2fileData[3][3][6];
 
-			string copylevel3fileNames[3][3][3][6];
-			string copylevel3fileData[3][3][3][6];
-			cout << "--------------------------------------------------------------------------------------" << endl;
-			cout << "Copying files " << endl;
-			for (int loop=0;loop<3;loop++){
-				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
-					copylevel1fileNames[loop][fileLoop] = level1fileNames[loop][fileLoop] + "COPY";
-					cout << "copying file " << level1fileNames[loop][fileLoop] << " to " << copylevel1fileNames[loop][fileLoop] << endl;
-					assert (directory[(i*3) + j]->copyFile("",level1fileNames[loop][fileLoop],level1dirNames[loop]+"/",copylevel1fileNames[loop][fileLoop]) == true);
-				}
-				for (int loop2=0;loop2<3;loop2++){
-					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
-						copylevel2fileNames[loop][loop2][fileLoop] = level2fileNames[loop][loop2][fileLoop] + "COPY";
-						cout << "copying file " << level1dirNames[loop] << "/" << level2fileNames[loop][loop2][fileLoop] << " to " << copylevel2fileNames[loop][loop2][fileLoop] << endl;
-						assert (directory[(i*3) + j]->copyFile(level1dirNames[loop]+"/",level2fileNames[loop][loop2][fileLoop],level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",copylevel2fileNames[loop][loop2][fileLoop]) == true);
-					}
-					for (int loop3=0;loop3<3;loop3++){
-						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
-							copylevel3fileNames[loop][loop2][loop3][fileLoop] = level3fileNames[loop][loop2][loop3][fileLoop] + "COPY";
-							cout << "copying file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3fileNames[loop][loop2][loop3][fileLoop] << " to " << copylevel3fileNames[loop][loop2][loop3][fileLoop] << endl;
-							assert (directory[(i*3) + j]->copyFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level3fileNames[loop][loop2][loop3][fileLoop],level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",copylevel3fileNames[loop][loop2][loop3][fileLoop]) == true);
-						}
-					}
-				}
-			}
-			cout << "--------------------------------------------------------------------------------------" << endl;
-			cout << "Rewriting Copied files " << endl;
-			for (int loop=0;loop<3;loop++){
-				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
-					cout << "rewriting file " << level1dirNames[loop] << "/" << copylevel1fileNames[loop][fileLoop] << endl;
-					copylevel1fileData[loop][fileLoop] = createRandomFile();
-					assert (directory[(i*3) + j]->rewriteFile(level1dirNames[loop]+"/",copylevel1fileNames[loop][fileLoop],copylevel1fileData[loop][fileLoop]) == true);
-				}
-				for (int loop2=0;loop2<3;loop2++){
-					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
-						cout << "rewriting file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2][fileLoop] << "/" << copylevel2fileNames[loop][loop2][fileLoop] << endl;
-						copylevel2fileData[loop][loop2][fileLoop] = createRandomFile();
-						assert (directory[(i*3) + j]->rewriteFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",copylevel2fileNames[loop][loop2][fileLoop],copylevel2fileData[loop][loop2][fileLoop]) == true);
-					}
-					for (int loop3=0;loop3<3;loop3++){
-						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
-							cout << "rewriting file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3][fileLoop] << "/" << copylevel3fileNames[loop][loop2][loop3][fileLoop] << endl;
-							copylevel3fileData[loop][loop2][loop3][fileLoop] = createRandomFile();
-							assert (directory[(i*3) + j]->rewriteFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",copylevel3fileNames[loop][loop2][loop3][fileLoop],copylevel3fileData[loop][loop2][loop3][fileLoop]) == true);
-						}
-					}
-				}
-			}
-			cout << "--------------------------------------------------------------------------------------" << endl;
-			cout << "Reading the original and copied files and checking they are not the same" << endl;
-			string file2;
-			for (int loop=0;loop<3;loop++){
-				for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
-					cout << "reading file " << level1fileNames[loop][fileLoop] << endl;
-					assert (directory[(i*3) + j]->readFile("",level1fileNames[loop][fileLoop],file) == true);
-					assert (level1fileData[loop][fileLoop] == file);
-					cout << "reading file " << level1dirNames[loop] << "/" << copylevel1fileNames[loop][fileLoop] << endl;
-					assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/",copylevel1fileNames[loop][fileLoop],file2) == true);
-					assert (copylevel1fileData[loop][fileLoop] == file2);
-					assert (file!=file2);
-				}
-				for (int loop2=0;loop2<3;loop2++){
-					for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
-						cout << "reading file " << level1dirNames[loop] << "/" << level2fileNames[loop][loop2][fileLoop] << endl;
-						assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/",level2fileNames[loop][loop2][fileLoop],file) == true);
-						assert (level2fileData[loop][loop2][fileLoop] == file);
-						cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << copylevel2fileNames[loop][loop2][fileLoop] << endl;
-						assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",copylevel2fileNames[loop][loop2][fileLoop],file2) == true);
-						assert (copylevel2fileData[loop][loop2][fileLoop] == file2);
-						assert (file!=file2);
-					}
-					for (int loop3=0;loop3<3;loop3++){
-						for (int fileLoop=0;fileLoop<6;fileLoop = fileLoop+2) {
-							cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3fileNames[loop][loop2][loop3][fileLoop] << endl;
-							assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/",level3fileNames[loop][loop2][loop3][fileLoop],file) == true);
-							assert (level3fileData[loop][loop2][loop3][fileLoop] == file);
-							cout << "reading file " << level1dirNames[loop] << "/" << level2dirNames[loop][loop2] << "/" << level3dirNames[loop][loop2][loop3] << "/" << copylevel3fileNames[loop][loop2][loop3][fileLoop] << endl;
-							assert (directory[(i*3) + j]->readFile(level1dirNames[loop]+"/"+level2dirNames[loop][loop2]+"/"+level3dirNames[loop][loop2][loop3]+"/",copylevel3fileNames[loop][loop2][loop3][fileLoop],file2) == true);
-							assert (copylevel3fileData[loop][loop2][loop3][fileLoop] == file2);
-							assert (file!=file2);
-						}
-					}
-				}
-			}
+//			string copylevel3fileNames[3][3][3][6];
+//			string copylevel3fileData[3][3][3][6];
 			cout << "--------------------------------------------------------------------------------------" << endl;
 			cout << "Make a hard link to the original file " << endl;
 			for (int loop=0;loop<3;loop++){
@@ -659,6 +577,7 @@ void UnitTest::runDirectoryTest() {
 					}
 				}
 			}
+			string file2;
 			cout << "--------------------------------------------------------------------------------------" << endl;
 			cout << "Reading the originals and the links checking they are the same" << endl;
 			for (int loop=0;loop<3;loop++){
@@ -691,11 +610,6 @@ void UnitTest::runDirectoryTest() {
 					}
 				}
 			}
-
-
-
-
-
 		}
 	}
 }

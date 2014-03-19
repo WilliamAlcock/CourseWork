@@ -4,6 +4,7 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 CPP_SRCS += \
+../src/src/CachedDirectory.cpp \
 ../src/src/Directory.cpp \
 ../src/src/DirectoryNode.cpp \
 ../src/src/DirectoryTree.cpp \
@@ -16,6 +17,7 @@ CPP_SRCS += \
 ../src/src/debugFunctions.cpp 
 
 OBJS += \
+./src/src/CachedDirectory.o \
 ./src/src/Directory.o \
 ./src/src/DirectoryNode.o \
 ./src/src/DirectoryTree.o \
@@ -28,6 +30,7 @@ OBJS += \
 ./src/src/debugFunctions.o 
 
 CPP_DEPS += \
+./src/src/CachedDirectory.d \
 ./src/src/Directory.d \
 ./src/src/DirectoryNode.d \
 ./src/src/DirectoryTree.d \

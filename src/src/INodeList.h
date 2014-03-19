@@ -2,6 +2,9 @@
 #include "FreeBlockList.h"
 #include "SuperBlock.h"
 #include "HDD.h"
+#include <set>
+
+using namespace std;
 
 const int iNodeSize = 85;
 const int iNodeHeaderSize = 12;
@@ -18,7 +21,7 @@ struct iNodeStruct {
 	int numberOfBlocks;
 	unsigned int used : 1;
 	unsigned int directory : 1;
-	unsigned int locked : 1;	// unused
+	unsigned int spare3 : 1;	// unused
 	unsigned int spare4 : 1;	// unused
 	unsigned int spare5 : 1;	// unused
 	unsigned int spare6 : 1;	// unused
@@ -44,11 +47,11 @@ public:
     void removeBlockFromINode(int iNodeNumber);								// Tested
     void addBlockToINode(int iNodeNumber, int block);						// Tested
     void setINodeSize(int iNodeNumber, long newSize);						// Tested
-    void lockINode(int iNodeNumber);										// Needs Testing
-    void unLockINode(int iNodeNumber);										// Needs Testing
+    void lockINode(int iNodeNumber);										// Tested
+    void unLockINode(int iNodeNumber);										// Tested
     // INode getters
     bool isINodeDirectory(int iNodeNumber);									// Tested
-    bool getINodeLockStatus(int iNodeNumber);								// Needs Testing
+    bool isINodeLocked(int iNodeNumber);									// Tested
     long getINodeSize(int iNodeNumber);										// Tested
     long getINodeCreationTime(int iNodeNumber);								// Not Implemented
     long getINodeModificationTime(int iNodeNumber);							// Not Implemented
@@ -63,6 +66,8 @@ private:
     int numberOfINodes;
     SuperBlock* superBlock;
 
+    // iNodeList
+    set <int> lockedNodes;
     // counters
     int firstFreeINode;			// saved in header
     int freeINodeCounter;		// saved in header

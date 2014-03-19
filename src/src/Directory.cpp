@@ -1,10 +1,5 @@
 #include "Directory.h"
-#include "DirectoryNode.h"
-#include "DirectoryTree.h"
-#include "SuperBlock.h"
-#include "FreeBlockList.h"
-#include "INodeList.h"
-#include "bitFunctions.cpp"
+#include "CachedDirectory.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -12,7 +7,7 @@
 #include <queue>
 #include <assert.h>
 
-Directory::Directory(HDD* _hdd, const SuperBlock* _superBlock, FreeBlockList* _freeBlockList, INodeList* _iNodeList, int _rootINode) {
+Directory::Directory(HDD* _hdd, SuperBlock* _superBlock, FreeBlockList* _freeBlockList, INodeList* _iNodeList, int _rootINode) {
 	// from input
 	hdd = _hdd;
 	superBlock = _superBlock;
@@ -20,9 +15,10 @@ Directory::Directory(HDD* _hdd, const SuperBlock* _superBlock, FreeBlockList* _f
 	iNodeList = _iNodeList;
 	rootINode = _rootINode;
 	directoryTree = new DirectoryTree(rootINode);
-	// cached directory flags
-	cachedDirectoryNode = 0;
 	initialised = false;
+	freeCaches = numberOfCachedDirectorys;
+	lastUsed = 0;
+	oldest = 0;
 }
 
 Directory::~Directory() {
@@ -41,11 +37,10 @@ void Directory::read() {
  * Writes a blank root block
  */
 void Directory::write() {
-	// writes a new header for the root node
-	DirectoryHeaderData directoryHeader;
-	directoryHeader.data.endOfLastName = directoryHeaderSize;
-	directoryHeader.data.startOfLastNode = superBlock->getBlockSize();
-	writeDirectoryHeader(iNodeList->getBlockNumber(rootINode,0), directoryHeader);
+	cachedDirectory[0] = new CachedDirectory(rootINode,hdd,superBlock,freeBlockList,iNodeList);
+	cachedDirectory[0]->writeRootNode();
+	freeCaches--;
+	lastUsed++;
 	initialised = true;
 }
 
@@ -58,30 +53,35 @@ bool Directory::createFile(string path, string name, string &data) {
 		// check the path is valid
 		int directoryNode = directoryTree->getPathNode(path);
 		if (directoryNode < 0) {
-			cout << "path is invalid" << endl;
+			cout << "path " << path << " is invalid" << endl;
 			return false;
 		}
 		// cache the directory (path) if it is not already cached
-		if (directoryNode != cachedDirectoryNode) cacheDirectory(directoryNode);
+		int directoryNodeCache = getCachedDirectory(directoryNode);
 		// check the filename does not already exist
-		if (cachedDirectory.count(name) > 0) {
-			cout << "file/Directory name already used" << endl;
+		if (cachedDirectory[directoryNodeCache]->cache.count(name) > 0) {
+			cout << "file/Directory " << name << " already exists" << endl;
+			freeCachedDirectory(directoryNodeCache);
 			return false;
 		}
 		// create an INode
 		int fileBlock = freeBlockList->getBlock();
 		int fileNode = iNodeList->writeNewINode(false,data.length(),fileBlock);
+		iNodeList->lockINode(fileNode);
 		// write the file
 		if (!writeFile(fileNode,data)) {
+			iNodeList->unLockINode(fileNode);
+			freeCachedDirectory(directoryNodeCache);
 			return false;
 		}
 		// add the file to the directory
-		cout << "Inserting " << name << " - " << fileNode << endl;
-		cachedDirectory.insert({name,fileNode});
+		iNodeList->lockINode(directoryNode);
+		cachedDirectory[directoryNodeCache]->cache.insert({name,fileNode});
 		// write the directory
-		writeCachedDirectory();
-		cout << listDirContents(path) << endl;
-
+		cachedDirectory[directoryNodeCache]->writeCachedDirectory();
+		iNodeList->unLockINode(directoryNode);
+		iNodeList->unLockINode(fileNode);
+		freeCachedDirectory(directoryNodeCache);
 		return true;
 	} else {
 		cout << "Path or filename not legal" << endl;
@@ -98,25 +98,30 @@ bool Directory::rewriteFile(string path, string name, string &data) {
 		// check the path is valid
 		int directoryNode = directoryTree->getPathNode(path);
 		if (directoryNode < 0) {
-			cout << "path is invalid" << endl;
+			cout << "path " << path << " is invalid" << endl;
 			return false;
 		}
 		// cache the directory (path) if it is not already cached
-		if (directoryNode != cachedDirectoryNode) cacheDirectory(directoryNode);
-		cout << listDirContents(path) << endl;
-
+		int directoryNodeCache = getCachedDirectory(directoryNode);
 		// check the filename exists
-		if (cachedDirectory.count(name) < 1) {
-			cout << "file does not exist" << endl;
+		if (cachedDirectory[directoryNodeCache]->cache.count(name) < 1) {
+			cout << "file " << name << " does not exist" << endl;
+			freeCachedDirectory(directoryNodeCache);
 			return false;
-		} else if (iNodeList->isINodeDirectory(cachedDirectory[name])) {
-			cout << "filename refers to directory - unable to delete" << endl;
+		} else if (iNodeList->isINodeDirectory(cachedDirectory[directoryNodeCache]->cache[name])) {
+			cout << name << " refers to directory - unable to rewrite" << endl;
+			freeCachedDirectory(directoryNodeCache);
 			return false;
 		}
+		iNodeList->lockINode(cachedDirectory[directoryNodeCache]->cache[name]);
 		// write the file
-		if (!writeFile(cachedDirectory[name],data)) {
+		if (!writeFile(cachedDirectory[directoryNodeCache]->cache[name],data)) {
+			iNodeList->unLockINode(cachedDirectory[directoryNodeCache]->cache[name]);
+			freeCachedDirectory(directoryNodeCache);
 			return false;
 		}
+		iNodeList->unLockINode(cachedDirectory[directoryNodeCache]->cache[name]);
+		freeCachedDirectory(directoryNodeCache);
 		return true;
 	} else {
 		cout << "Path or filename not legal" << endl;
@@ -133,25 +138,30 @@ bool Directory::deleteFile(string path, string name) {
 		// check the path is valid
 		int directoryNode = directoryTree->getPathNode(path);
 		if (directoryNode < 0) {
-			cout << "path is invalid" << endl;
+			cout << "path " << path << " is invalid" << endl;
 			return false;
 		}
 		// cache the directory (path) if it is not already cached
-		if (directoryNode != cachedDirectoryNode) cacheDirectory(directoryNode);
+		int directoryNodeCache = getCachedDirectory(directoryNode);
 		// check the filename exists and is not a directory
-		if (cachedDirectory.count(name) < 1) {
-			cout << "file does not exist" << endl;
+		if (cachedDirectory[directoryNodeCache]->cache.count(name) < 1) {
+			cout << "file " << name << " does not exist" << endl;
+			freeCachedDirectory(directoryNodeCache);
 			return false;
-		} else if (iNodeList->isINodeDirectory(cachedDirectory[name])) {
-			cout << "filename refers to directory - unable to delete" << endl;
+		} else if (iNodeList->isINodeDirectory(cachedDirectory[directoryNodeCache]->cache[name])) {
+			cout << name << " refers to directory - unable to delete" << endl;
+			freeCachedDirectory(directoryNodeCache);
 			return false;
 		}
 		// remove a link from the files iNode
-		iNodeList->removeLinkFromINode(cachedDirectory[name]);
+		iNodeList->removeLinkFromINode(cachedDirectory[directoryNodeCache]->cache[name]);
 		// delete the file from the directory
-		cachedDirectory.erase(name);
+		iNodeList->lockINode(directoryNode);
+		cachedDirectory[directoryNodeCache]->cache.erase(name);
 		// write the directory
-		writeCachedDirectory();
+		cachedDirectory[directoryNodeCache]->writeCachedDirectory();
+		iNodeList->unLockINode(directoryNode);
+		freeCachedDirectory(directoryNodeCache);
 		return true;
 	} else {
 		cout << "Path or filename not legal" << endl;
@@ -168,29 +178,35 @@ bool Directory::renameFile(string fromPath, string fromName, string toName) {
 		// check the path is valid
 		int directoryNode = directoryTree->getPathNode(fromPath);
 		if (directoryNode < 0) {
-			cout << "path is invalid" << endl;
+			cout << "path " << fromPath << " is invalid" << endl;
 			return false;
 		}
 		// cache the directory (path) if it is not already cached
-		if (directoryNode != cachedDirectoryNode) cacheDirectory(directoryNode);
+		int directoryNodeCache = getCachedDirectory(directoryNode);
 		// check the from filename exists and is not a directory
-		if (cachedDirectory.count(fromName) < 1) {
-			cout << "file does not exist" << endl;
+		if (cachedDirectory[directoryNodeCache]->cache.count(fromName) < 1) {
+			cout << "file " << fromName << " does not exist" << endl;
+			freeCachedDirectory(directoryNodeCache);
 			return false;
-		} else if (iNodeList->isINodeDirectory(cachedDirectory[fromName])) {
-			cout << "filename " << fromName << " refers to directory - unable to delete" << endl;
+		} else if (iNodeList->isINodeDirectory(cachedDirectory[directoryNodeCache]->cache[fromName])) {
+			cout << fromName << " refers to directory - unable to rename" << endl;
+			freeCachedDirectory(directoryNodeCache);
 			return false;
 		}
 		// check the toName does not exist
-		if (cachedDirectory.count(toName) > 0) {
-			cout << "file " << toName << " already exists" << endl;
+		if (cachedDirectory[directoryNodeCache]->cache.count(toName) > 0) {
+			cout << "file/Directory " << toName << " already exists" << endl;
+			freeCachedDirectory(directoryNodeCache);
 			return false;
 		}
 		// change the name in the directory
-		cachedDirectory[toName] = cachedDirectory[fromName];
-		cachedDirectory.erase(fromName);
+		iNodeList->lockINode(directoryNode);
+		cachedDirectory[directoryNodeCache]->cache[toName] = cachedDirectory[directoryNodeCache]->cache[fromName];
+		cachedDirectory[directoryNodeCache]->cache.erase(fromName);
 		// write the directory
-		writeCachedDirectory();
+		cachedDirectory[directoryNodeCache]->writeCachedDirectory();
+		iNodeList->unLockINode(directoryNode);
+		freeCachedDirectory(directoryNodeCache);
 		return true;
 	} else {
 		cout << "Path or filename not legal" << endl;
@@ -209,67 +225,55 @@ bool Directory::moveFile(string fromPath, string fromName, string toPath, string
 			return renameFile(fromPath,fromName,toName);
 		}
 		// check the paths are valid
-		int fromDirectoryNode = directoryTree->getPathNode(fromPath);
 		int toDirectoryNode = directoryTree->getPathNode(toPath);
+		int fromDirectoryNode = directoryTree->getPathNode(fromPath);
 		if (fromDirectoryNode < 0) {
-			cout << "path is invalid" << endl;
+			cout << "path " << fromPath << " is invalid" << endl;
 			return false;
 		}
 		if (toDirectoryNode < 0) {
-			cout << "path is invalid" << endl;
+			cout << "path " << toPath << " is invalid" << endl;
 			return false;
 		}
 		// cache the from directory (path) if it is not already cached
-		if (fromDirectoryNode != cachedDirectoryNode) cacheDirectory(fromDirectoryNode);
-		// check the fromName exists and is not a directory
-		if (cachedDirectory.count(fromName) < 1) {
-			cout << "file " << fromName << " does not exist" << endl;
-			return false;
-		} else if (iNodeList->isINodeDirectory(cachedDirectory[fromName])) {
-			cout << fromName << " is a directory" << endl;
-			return false;
-		}
-		DirectoryHeaderData fromCachedDirectoryLastBlockHeader = cachedDirectoryLastBlockHeader;
-		int fromCachedDirectoryNode = cachedDirectoryNode;
-		map <std::string, int> fromCachedDirectory = cachedDirectory;
-
+		int fromDirectoryNodeCache = getCachedDirectory(fromDirectoryNode);
 		// cache the to directory (path)
-		cacheDirectory(toDirectoryNode);
-		// check the toName does not exist
-		if (cachedDirectory.count(toName) > 0) {
-			cout << "file " << toName << " already exists" << endl;
+		int toDirectoryNodeCache = getCachedDirectory(toDirectoryNode);
+		// check the fromName exists and is not a directory
+		if (cachedDirectory[fromDirectoryNodeCache]->cache.count(fromName) < 1) {
+			cout << "file " << fromName << " does not exist" << endl;
+			freeCachedDirectory(fromDirectoryNodeCache);
+			return false;
+		} else if (iNodeList->isINodeDirectory(cachedDirectory[fromDirectoryNodeCache]->cache[fromName])) {
+			cout << fromName << " refers to directory - unable to move" << endl;
+			freeCachedDirectory(fromDirectoryNodeCache);
 			return false;
 		}
+		// check the toName does not exist
+		if (cachedDirectory[toDirectoryNodeCache]->cache.count(toName) > 0) {
+			cout << "file/Directory " << toName << " already exists" << endl;
+			freeCachedDirectory(fromDirectoryNodeCache);
+			freeCachedDirectory(toDirectoryNodeCache);
+			return false;
+		}
+		iNodeList->lockINode(toDirectoryNode);
+		iNodeList->lockINode(fromDirectoryNode);
 		// add the file to the to directory
-		cachedDirectory[toName] = fromCachedDirectory[fromName];
+		cachedDirectory[toDirectoryNodeCache]->cache[toName] = cachedDirectory[fromDirectoryNodeCache]->cache[fromName];
 		// write the to directory;
-		writeCachedDirectory();
-
-		// erase the fromName from the fromPath
-		cachedDirectoryLastBlockHeader = fromCachedDirectoryLastBlockHeader;
-		cachedDirectoryNode = fromCachedDirectoryNode;
-		cachedDirectory = fromCachedDirectory;
-
-		cachedDirectory.erase(fromName);
+		cachedDirectory[toDirectoryNodeCache]->writeCachedDirectory();
+		cachedDirectory[fromDirectoryNodeCache]->cache.erase(fromName);
 		// write the from directory
-		writeCachedDirectory();
+		cachedDirectory[fromDirectoryNodeCache]->writeCachedDirectory();
+		iNodeList->unLockINode(fromDirectoryNode);
+		iNodeList->unLockINode(toDirectoryNode);
+		freeCachedDirectory(fromDirectoryNodeCache);
+		freeCachedDirectory(toDirectoryNodeCache);
 		return true;
 	} else {
 		cout << "Path or filename not legal" << endl;
 		return false;
 	}
-}
-
-bool Directory::copyFile(string fromPath, string fromName, string toPath, string toName) {
-	if (!initialised) throw std::runtime_error("Directory not Initialised");
-	string data;
-
-	cout << "Reading file " << fromPath << fromName << endl;
-
-	if (!readFile(fromPath, fromName, data)) return false;
-
-	cout << "Creating file " << toPath << toName << endl;
-	return createFile(toPath, toName, data);
 }
 
 bool Directory::makeHardLinkToFile(string fromPath, string fromName, string toPath, string toName) {
@@ -279,38 +283,46 @@ bool Directory::makeHardLinkToFile(string fromPath, string fromName, string toPa
 		int fromDirectoryNode = directoryTree->getPathNode(fromPath);
 		int toDirectoryNode = directoryTree->getPathNode(toPath);
 		if (fromDirectoryNode < 0) {
-			cout << "path is invalid" << endl;
+			cout << "path " << fromPath << " is invalid" << endl;
 			return false;
 		}
 		if (toDirectoryNode < 0) {
-			cout << "path is invalid" << endl;
+			cout << "path " << toPath << " is invalid" << endl;
 			return false;
 		}
-
-		// cache the from directory (path) if it is not already cached
-		if (fromDirectoryNode != cachedDirectoryNode) cacheDirectory(fromDirectoryNode);
-		// check the fromName exists and is not a directory
-		if (cachedDirectory.count(fromName) < 1) {
-			cout << "file " << fromName << " does not exist" << endl;
-			return false;
-		} else if (iNodeList->isINodeDirectory(cachedDirectory[fromName])) {
-			cout << fromName << " is a directory" << endl;
-			return false;
-		}
-
-		int fileNode = cachedDirectory[fromName];
-
 		// cache the to directory (path)
-		cacheDirectory(toDirectoryNode);
-		// check the toName does not exist
-		if (cachedDirectory.count(toName) > 0) {
-			cout << "file " << toName << " already exists" << endl;
+		int toDirectoryNodeCache = getCachedDirectory(toDirectoryNode);
+		// cache the from directory (path) if it is not already cached
+		int fromDirectoryNodeCache = getCachedDirectory(fromDirectoryNode);
+		// check the fromName exists and is not a directory
+		if (cachedDirectory[fromDirectoryNodeCache]->cache.count(fromName) < 1) {
+			cout << "file " << fromName << " does not exist" << endl;
+			freeCachedDirectory(fromDirectoryNodeCache);
+			freeCachedDirectory(toDirectoryNodeCache);
+			return false;
+		} else if (iNodeList->isINodeDirectory(cachedDirectory[fromDirectoryNodeCache]->cache[fromName])) {
+			cout << fromName << " refers to directory - unable to make link" << endl;
+			freeCachedDirectory(fromDirectoryNodeCache);
+			freeCachedDirectory(toDirectoryNodeCache);
 			return false;
 		}
+
+		int fileNode = cachedDirectory[fromDirectoryNodeCache]->cache[fromName];
+		// check the toName does not exist
+		if (cachedDirectory[toDirectoryNodeCache]->cache.count(toName) > 0) {
+			cout << "file/Directory " << toName << " already exists" << endl;
+			freeCachedDirectory(fromDirectoryNodeCache);
+			freeCachedDirectory(toDirectoryNodeCache);
+			return false;
+		}
+		iNodeList->lockINode(toDirectoryNodeCache);
 		// add the file to the to directory
-		cachedDirectory[toName] = fileNode;
+		cachedDirectory[toDirectoryNodeCache]->cache[toName] = fileNode;
 		// write the to directory;
-		writeCachedDirectory();
+		cachedDirectory[toDirectoryNodeCache]->writeCachedDirectory();
+		iNodeList->unLockINode(toDirectoryNodeCache);
+		freeCachedDirectory(fromDirectoryNodeCache);
+		freeCachedDirectory(toDirectoryNodeCache);
 		return true;
 	} else {
 		cout << "Path or filename not legal" << endl;
@@ -323,31 +335,9 @@ bool Directory::makeHardLinkToFile(string fromPath, string fromName, string toPa
  */
 bool Directory::readFile(string path, string name, string &data) {
 	if (!initialised) throw std::runtime_error("Directory not Initialised");
-	if (isPathNameLegal(path) && isNameLegal(name)) {
-		// check the path is valid
-		int directoryNode = directoryTree->getPathNode(path);
-		if (directoryNode < 0) {
-			cout << "path is invalid" << endl;
-			return false;
-		}
-		// cache the directory (path) if it is not already cached
-		if (directoryNode != cachedDirectoryNode) cacheDirectory(directoryNode);
-		// check the filename exists
-		if (cachedDirectory.count(name) < 1) {
-			cout << "file name does not exist" << endl;
-			return false;
-		} else if (iNodeList->isINodeDirectory(cachedDirectory[name])) {
-			cout << path << name << " is a directory" << endl;
-			return false;
-		}
-		data.clear();
-		// read the file and put the data in data and the length in fileLength
-		for (int i=0;i<iNodeList->getNumberOfBlocks(cachedDirectory[name]);i++) {
-			readFileBlock(iNodeList->getBlockNumber(cachedDirectory[name],i),data);
-		}
-		return true;
+	if (openFile(path,name,data)) {
+		return closeFile(path,name);
 	} else {
-		cout << "Path or filename not legal" << endl;
 		return false;
 	}
 }
@@ -357,10 +347,35 @@ bool Directory::readFile(string path, string name, string &data) {
  */
 bool Directory::openFile(string path, string name, string &data) {
 	if (!initialised) throw std::runtime_error("Directory not Initialised");
-	if (readFile(path,name,data)) {
-		iNodeList->lockINode(cachedDirectory[name]);
+	if (isPathNameLegal(path) && isNameLegal(name)) {
+		// check the path is valid
+		int directoryNode = directoryTree->getPathNode(path);
+		if (directoryNode < 0) {
+			cout << "path " << path << " is invalid" << endl;
+			return false;
+		}
+		// cache the directory (path) if it is not already cached
+		int directoryNodeCache = getCachedDirectory(directoryNode);
+		// check the filename exists
+		if (cachedDirectory[directoryNodeCache]->cache.count(name) < 1) {
+			cout << "file " << name << " does not exist" << endl;
+			freeCachedDirectory(directoryNodeCache);
+			return false;
+		} else if (iNodeList->isINodeDirectory(cachedDirectory[directoryNodeCache]->cache[name])) {
+			cout << name << " refers to directory - unable to read" << endl;
+			freeCachedDirectory(directoryNodeCache);
+			return false;
+		}
+		data.clear();
+		iNodeList->lockINode(cachedDirectory[directoryNodeCache]->cache[name]);
+		// read the file and put the data in data and the length in fileLength
+		for (int i=0;i<iNodeList->getNumberOfBlocks(cachedDirectory[directoryNodeCache]->cache[name]);i++) {
+			readFileBlock(iNodeList->getBlockNumber(cachedDirectory[directoryNodeCache]->cache[name],i),data);
+		}
+		freeCachedDirectory(directoryNodeCache);
 		return true;
 	} else {
+		cout << "Path or filename not legal" << endl;
 		return false;
 	}
 }
@@ -374,17 +389,19 @@ bool Directory::closeFile(string path, string name) {
 		// check the path is valid
 		int directoryNode = directoryTree->getPathNode(path);
 		if (directoryNode < 0) {
-			cout << "path is invalid" << endl;
+			cout << "path " << path << " is invalid" << endl;
 			return false;
 		}
 		// cache the directory (path) if it is not already cached
-		if (directoryNode != cachedDirectoryNode) cacheDirectory(directoryNode);
+		int directoryNodeCache = getCachedDirectory(directoryNode);
 		// check the filename exists
-		if (cachedDirectory.count(name) < 1) {
-			cout << "file name does not exist" << endl;
+		if (cachedDirectory[directoryNodeCache]->cache.count(name) < 1) {
+			cout << "file " << name << " does not exist" << endl;
+			freeCachedDirectory(directoryNodeCache);
 			return false;
 		}
-		iNodeList->unLockINode(cachedDirectory[name]);
+		iNodeList->unLockINode(cachedDirectory[directoryNodeCache]->cache[name]);
+		freeCachedDirectory(directoryNodeCache);
 		return true;
 	} else {
 		cout << "Path or filename not legal" << endl;
@@ -401,18 +418,19 @@ string Directory::listDirContents(string path) {
 		// check the directory (path + name) exists (directoryTree)
 		int directoryNode = directoryTree->getPathNode(path);
 		if (directoryNode < 0) {
-			cout << "path is invalid" << endl;
+			cout << "path " << path << " is invalid" << endl;
 			return returnString.str();
 		}
 		// cache the directory if it is not already cached
-		if (directoryNode != cachedDirectoryNode) cacheDirectory(directoryNode);
+		int directoryNodeCache = getCachedDirectory(directoryNode);
 		// create the output string
 		returnString << "DIRECTORY " << path << " - " << directoryNode << endl;
-		for (const auto &pair : cachedDirectory) {
+		for (const auto &pair : cachedDirectory[directoryNodeCache]->cache) {
 			returnString << pair.first;
 			if (iNodeList->isINodeDirectory(pair.second)) returnString << " - Directory";
 			returnString << endl;
 		}
+		freeCachedDirectory(directoryNodeCache);
 	} else {
 		cout << "Path not legal" << endl;
 	}
@@ -424,30 +442,36 @@ bool Directory::deleteDir(string path, string name) {
 	if (isPathNameLegal(path) && isNameLegal(name)) {
 		// check the directory (path + name) exists (directoryTree)
 		int directoryNode = directoryTree->getPathNode(path + name + "/");
+		int parentDirectoryNode = directoryTree->getPathNode(path);
 		if (directoryNode < 0) {
-			cout << "path is invalid" << endl;
+			cout << "path " << path << " is invalid" << endl;
 			return false;
 		}
 		// cache the directory if it is not already cached
-		if (directoryNode != cachedDirectoryNode) cacheDirectory(directoryNode);
+		int directoryNodeCache = getCachedDirectory(directoryNode);
+		int parentDirectoryNodeCache = getCachedDirectory(parentDirectoryNode);
 		// check the directory is empty
-		if (cachedDirectory.size()>0) {
+		if (cachedDirectory[directoryNodeCache]->cache.size()>0) {
 			cout << "directory is not empty" << endl;
+			freeCachedDirectory(directoryNodeCache);
+			freeCachedDirectory(parentDirectoryNodeCache);
 			return false;
 		}
-		int parentDirectoryNode = directoryTree->getPathNode(path);
-		cacheDirectory(parentDirectoryNode);
+		iNodeList->lockINode(directoryNode);
+		iNodeList->lockINode(parentDirectoryNode);
 		// remove the directory from the cache
-		if (cachedDirectory.count(name) == 0) throw runtime_error("cached directory and directory tree out of sync");
-		cachedDirectory.erase(name);
+		if (cachedDirectory[parentDirectoryNodeCache]->cache.count(name) == 0) throw runtime_error("cached directory and directory tree out of sync");
+		cachedDirectory[parentDirectoryNodeCache]->cache.erase(name);
 		// write the cache
-		writeCachedDirectory();
+		cachedDirectory[parentDirectoryNodeCache]->writeCachedDirectory();
 		// remove the link from the directory's iNodeList
 		iNodeList->removeLinkFromINode(directoryNode);
 		// remove the directory from the directory Tree
-		if (!directoryTree->deleteDirectory(path,name)) {
-			throw std::runtime_error("Error deleting directory from tree");
-		}
+		if (!directoryTree->deleteDirectory(path,name)) throw std::runtime_error("Error deleting directory from tree");
+		iNodeList->unLockINode(parentDirectoryNode);
+		iNodeList->unLockINode(directoryNode);
+		freeCachedDirectory(directoryNodeCache);
+		freeCachedDirectory(parentDirectoryNodeCache);
 		return true;
 	} else {
 		cout << "Path or filename not legal" << endl;
@@ -461,32 +485,36 @@ bool Directory::createDir(string path, string name) {
 		int parentDirectoryNode = directoryTree->getPathNode(path);
 		// check the path is valid
 		if (parentDirectoryNode < 0) {
-			cout << "path is invalid" << endl;
+			cout << "path " << path << " is invalid" << endl;
 			return false;
 		}
 		// cache the parent directory (path) if it is not already cached
-		if (parentDirectoryNode != cachedDirectoryNode) cacheDirectory(parentDirectoryNode);
+		int parentDirectoryNodeCache = getCachedDirectory(parentDirectoryNode);
 		// check the name is not already in use
-		if (cachedDirectory.count(name) > 0) {
-			cout << "file/Directory name already used" << endl;
+		if (cachedDirectory[parentDirectoryNodeCache]->cache.count(name) > 0) {
+			cout << "file/Directory " << name << " already exists" << endl;
+			freeCachedDirectory(parentDirectoryNodeCache);
 			return false;
 		}
 		// write a new INode if this fails, busy = false, return false
 		int directoryBlock = freeBlockList->getBlock();
-
 		int directoryNode = iNodeList->writeNewINode(true,0,directoryBlock);
-
+		iNodeList->lockINode(directoryNode);
+		iNodeList->lockINode(parentDirectoryNode);
 		// write the header for the directory block
 		DirectoryHeaderData directoryHeader;
 		directoryHeader.data.endOfLastName = directoryHeaderSize;
 		directoryHeader.data.startOfLastNode = superBlock->getBlockSize();
-		writeDirectoryHeader(directoryBlock, directoryHeader);
+		cachedDirectory[parentDirectoryNodeCache]->writeDirectoryHeader(directoryBlock, directoryHeader);
 		// add the directory to the cache
-		cachedDirectory.insert({name,directoryNode});
+		cachedDirectory[parentDirectoryNodeCache]->cache.insert({name,directoryNode});
 		// write the cache
-		writeCachedDirectory();
+		cachedDirectory[parentDirectoryNodeCache]->writeCachedDirectory();
 		// add the directory to the directoryTree
 		directoryTree->createDirectory(path,name,directoryNode);
+		iNodeList->unLockINode(parentDirectoryNode);
+		iNodeList->unLockINode(directoryNode);
+		freeCachedDirectory(parentDirectoryNodeCache);
 		return true;
 	} else {
 		cout << "Path or filename not legal" << endl;
@@ -502,34 +530,41 @@ bool Directory::moveDir(string fromPath, string fromName, string toPath, string 
 		int toMoveDir = directoryTree->getPathNode(fromPath+fromName+"/");
 		// check the fromPath and fromName exist
 		if (toMoveDir < 0) {
-			cout << fromPath << fromName << "/" << " does not exist" << endl;
+			cout << "path " << fromPath << fromName << " is invalid" << endl;
 			return false;
 		}
 		// check the toPath exists
 		if (toDir < 0) {
-			cout << toDir << " does not exist" << endl;
+			cout << "path " << toPath << " is invalid" << endl;
 			return false;
 		}
-
 		// cache the to directory (path) if it is not already cached
-		if (toDir != cachedDirectoryNode) cacheDirectory(toDir);
+		int toDirectoryNodeCache = getCachedDirectory(toDir);
+		// cache the from path
+		int fromDirectoryNodeCache = getCachedDirectory(fromDir);
 		// check the toName does not already exist
-		if (cachedDirectory.count(toName) > 0) {
-			cout << toPath << "/" << toDir << " already exists" << endl;
+		if (cachedDirectory[toDirectoryNodeCache]->cache.count(toName) > 0) {
+			cout << "file/Directory " << toName << " already exists" << endl;
+			freeCachedDirectory(toDirectoryNodeCache);
+			freeCachedDirectory(fromDirectoryNodeCache);
 			return false;
 		}
+		iNodeList->lockINode(toDir);
+		iNodeList->lockINode(fromDir);
 		// add the directory to the cached directory
-		cachedDirectory.insert({toName,toMoveDir});
+		cachedDirectory[toDirectoryNodeCache]->cache.insert({toName,toMoveDir});
 		// write the directory cache
-		writeCachedDirectory();
-		// cache the from path
-		cacheDirectory(fromDir);
+		cachedDirectory[toDirectoryNodeCache]->writeCachedDirectory();
 		// remove the directory from the cache
-		cachedDirectory.erase(fromName);
+		cachedDirectory[fromDirectoryNodeCache]->cache.erase(fromName);
 		// write the cached Directory
-		writeCachedDirectory();
+		cachedDirectory[fromDirectoryNodeCache]->writeCachedDirectory();
 		// update the directory tree
 		directoryTree->moveDirectory(fromPath,fromName,toPath,toName);
+		iNodeList->unLockINode(fromDir);
+		iNodeList->unLockINode(toDir);
+		freeCachedDirectory(toDirectoryNodeCache);
+		freeCachedDirectory(fromDirectoryNodeCache);
 		return true;
 	} else {
 		cout << "Path or filename not legal" << endl;
@@ -544,30 +579,39 @@ bool Directory::makeHardLinkDir(string fromPath, string fromName, string toPath,
 		int toCopyDir = directoryTree->getPathNode(fromPath+fromName+"/");
 		// check the fromPath and fromName exist
 		if (toCopyDir < 0) {
-			cout << fromPath << fromName << "/" << " does not exist" << endl;
+			cout << "path " << fromPath << fromName << " is invalid" << endl;
 			return false;
 		}
 		// check the toPath exists
 		if (toDir < 0) {
-			cout << toDir << " does not exist" << endl;
+			cout << "path " << toDir << " is invalid" << endl;
 			return false;
 		}
-
 		// cache the to directory (path) if it is not already cached
-		if (toDir != cachedDirectoryNode) cacheDirectory(toDir);
+		int toDirectoryNodeCache = getCachedDirectory(toDir);
+		// cache the from path
+		int toCopyDirectoryNodeCache = getCachedDirectory(toCopyDir);
 		// check the toName does not already exist
-		if (cachedDirectory.count(toName) > 0) {
-			cout << toPath << "/" << toDir << " already exists" << endl;
+		if (cachedDirectory[toDirectoryNodeCache]->cache.count(toName) > 0) {
+			cout << "file/Directory " << toPath << toDir << " already exists" << endl;
+			freeCachedDirectory(toDirectoryNodeCache);
+			freeCachedDirectory(toCopyDirectoryNodeCache);
 			return false;
 		}
+		iNodeList->lockINode(toDir);
+		iNodeList->lockINode(toCopyDir);
 		// add the directory to the cached directory
-		cachedDirectory.insert({toName,toCopyDir});
+		cachedDirectory[toDirectoryNodeCache]->cache.insert({toName,toCopyDir});
 		// write the directory cache
-		writeCachedDirectory();
+		cachedDirectory[toDirectoryNodeCache]->writeCachedDirectory();
 		// update the directory tree
 		directoryTree->copyDirectory(fromPath,fromName,toPath,toName);
 		// add a link to the directorys iNode
 		iNodeList->addLinkToINode(toCopyDir);
+		iNodeList->unLockINode(toDir);
+		iNodeList->unLockINode(toCopyDir);
+		freeCachedDirectory(toDirectoryNodeCache);
+		freeCachedDirectory(toCopyDirectoryNodeCache);
 		return true;
 	} else {
 		cout << "Path or filename not legal" << endl;
@@ -623,7 +667,7 @@ bool Directory::writeFile(int iNodeNumber, string &data) {
  * write a file block to disk
  */
 void Directory::writeFileBlock(int blockNumber, string &data, int startPointer, int endPointer) {
-	hdd->seek(getStartOfBlock(blockNumber) + fileHeaderSize);
+	hdd->seek(superBlock->getStartOfBlock(blockNumber) + fileHeaderSize);
 	for (int i=startPointer;i<endPointer;i++) {
 		hdd->write(data.at(i));
 	}
@@ -633,14 +677,14 @@ void Directory::writeFileBlock(int blockNumber, string &data, int startPointer, 
  * write a file block header to disk
  */
 void Directory::writeFileBlockHeader(int blockNumber, FileHeaderData fileHeaderData) {
-	hdd->seek(getStartOfBlock(blockNumber));
+	hdd->seek(superBlock->getStartOfBlock(blockNumber));
 	for (int i=0;i<fileHeaderSize;i++) {
 		hdd->write(fileHeaderData.c[i]);
 	}
 }
 
 void Directory::readFileBlock(int blockNumber, string &data) {
-	hdd->seek(getStartOfBlock(blockNumber) + fileHeaderSize);
+	hdd->seek(superBlock->getStartOfBlock(blockNumber) + fileHeaderSize);
 	FileHeaderData fileHeaderData = readFileBlockHeader(blockNumber);
 	for (int i=0;i<fileHeaderData.lengthOfBlock;i++) {
 		data += hdd->read();
@@ -648,7 +692,7 @@ void Directory::readFileBlock(int blockNumber, string &data) {
 }
 
 FileHeaderData Directory::readFileBlockHeader(int blockNumber) {
-	hdd->seek(getStartOfBlock(blockNumber));
+	hdd->seek(superBlock->getStartOfBlock(blockNumber));
 	FileHeaderData fileHeaderData;
 	for (int i=0;i<4;i++) {
 		fileHeaderData.c[i] = hdd->read();
@@ -662,141 +706,6 @@ unsigned int Directory::getDataInBlock() {
 
 // ********************** Local Directory operations **********************
 
-void Directory::writeCachedDirectory() {
-	if (!initialised) throw std::runtime_error("Directory not Initialised");
-	// get the number of nodes the directory currently has allocated (must be at least 1)
-	int currentNumberOfBlocks = iNodeList->getNumberOfBlocks(cachedDirectoryNode);
-	if (currentNumberOfBlocks<1) throw runtime_error("cached Directory Node has 0 blocks !");
-	// point to the first block number
-	int currentNodeBlockNumber = 0;
-	int currentDiskBlockNumber = iNodeList->getBlockNumber(cachedDirectoryNode,currentNodeBlockNumber);
-	// the amount of space left in the current block
-	int blockSizeRemaining = superBlock->getBlockSize() - directoryHeaderSize;
-	// current entry size
-	int entrySize = 0;
-	// current block header
-	DirectoryHeaderData directoryHeaderData;
-	directoryHeaderData.data.endOfLastName = directoryHeaderSize;
-	directoryHeaderData.data.startOfLastNode = superBlock->getBlockSize();
-
-	for (const auto &pair : cachedDirectory) {
-		entrySize = (pair.first.length() + 1 + directoryEntrySize);
-		if (blockSizeRemaining>entrySize) {
-			blockSizeRemaining -= entrySize;
-		} else {
-			// write the header
-			writeDirectoryHeader(currentDiskBlockNumber,directoryHeaderData);
-			// reset the counters
-			blockSizeRemaining = superBlock->getBlockSize() - directoryHeaderSize - entrySize;
-			directoryHeaderData.data.endOfLastName = directoryHeaderSize;
-			directoryHeaderData.data.startOfLastNode = superBlock->getBlockSize();
-			currentNodeBlockNumber++;
-			// allocate a new block to the iNode if needed
-			if (currentNodeBlockNumber == currentNumberOfBlocks) {
-				currentNumberOfBlocks++;
-				currentDiskBlockNumber = freeBlockList->getBlock();
-				iNodeList->addBlockToINode(cachedDirectoryNode, currentDiskBlockNumber);
-			} else {
-				currentDiskBlockNumber = iNodeList->getBlockNumber(cachedDirectoryNode,currentNodeBlockNumber);
-			}
-		}
-
-		// write the entry and the name
-		DirectoryEntryData directoryEntryData;
-		directoryEntryData.data.iNodeRef = pair.second;
-		directoryEntryData.data.nameOffset = directoryHeaderData.data.endOfLastName;
-		writeDirectoryEntryData(directoryEntryData, currentDiskBlockNumber, directoryHeaderData.data.startOfLastNode);
-		writeDirectoryEntryName(pair.first, currentDiskBlockNumber, directoryHeaderData.data.endOfLastName);
-
-		directoryHeaderData.data.endOfLastName += pair.first.length()+1;
-		directoryHeaderData.data.startOfLastNode -= directoryEntrySize;
-	}
-	// write the header
-	writeDirectoryHeader(currentDiskBlockNumber,directoryHeaderData);
-}
-
-/*
- * Writes a directory entry to the bottom of a specified block
- */
-void Directory::writeDirectoryEntryData(DirectoryEntryData entry, int blockNumber, int lastNodePointer) {
-	hdd->seek(getStartOfBlock(blockNumber) + lastNodePointer - directoryEntrySize);
-	for (int i=0;i<directoryEntrySize;i++) {
-		hdd->write(entry.c[i]);
-	}
-}
-
-/*
- * Writes a directory entry name to the top of a specified block
- */
-void Directory::writeDirectoryEntryName(string name, int blockNumber, int startPointer) {
-	hdd->seek(getStartOfBlock(blockNumber) + startPointer);
-	for (unsigned int i=0;i<name.length();i++) {
-		hdd->write(name.at(i));
-	}
-	hdd->write('\0');
-}
-
-/*
- * Writes a directory header to the top of a specified block
- */
-void Directory::writeDirectoryHeader(int blockNumber, DirectoryHeaderData directoryHeader) {
-	hdd->seek(getStartOfBlock(blockNumber));
-	for (int i=0;i<directoryHeaderSize;i++) {
-		hdd->write(directoryHeader.c[i]);
-	}
-}
-
-/*
- * Clears all the entries from the cache
- */
-void Directory::resetCache() {
-	for (int i=0;i<8;i++) {
-		cachedDirectoryLastBlockHeader.c[i] = '\0';
-	}
-	cachedDirectoryNode = -1;
-	cachedDirectory.clear();
-}
-
-/*
- * Caches a directory represented by an iNode
- */
-void Directory::cacheDirectory(int iNodeNumber) {
-	resetCache();
-	cachedDirectoryNode = iNodeNumber;
-	int numberOfBlocks = iNodeList->getNumberOfBlocks(cachedDirectoryNode);
-	if (numberOfBlocks<1) throw std::runtime_error("Directory has 0 blocks ERROR !!");
-
-	for (int i=0;i<numberOfBlocks;i++) {
-		cacheDirectoryBlock(iNodeList->getBlockNumber(cachedDirectoryNode,i));
-	}
-}
-
-/*
- * Caches a directory block
- */
-void Directory::cacheDirectoryBlock(int blockNumber) {
-	// read the directory header
-	cachedDirectoryLastBlockHeader = readDirectoryHeader(blockNumber);
-	// calculate number of entries
-	int numberOfEntries = (superBlock->getBlockSize() - cachedDirectoryLastBlockHeader.data.startOfLastNode) / directoryEntrySize;
-	// read the directory names
-	string names = readDirectoryEntryNames(blockNumber, numberOfEntries, cachedDirectoryLastBlockHeader.data.endOfLastName);
-	string currentName = "";// cache the root directory
-	unsigned int namesPointer = 0;
-	// read entries
-	for (int i=numberOfEntries-1;i>-1;i--) {
-		DirectoryEntryData entry = readDirectoryEntry(blockNumber, i);
-		namesPointer = entry.data.nameOffset - directoryHeaderSize;
-		while (namesPointer < names.length() && names.at(namesPointer)!='\0') {
-			currentName += names.at(namesPointer);
-			namesPointer++;
-		}
-		cachedDirectory.insert({currentName,entry.data.iNodeRef});
-		currentName.clear();
-		namesPointer++;
-	}
-}
-
 /*
  * Used in the queue for caching directory tree
  */
@@ -804,6 +713,48 @@ struct TreeQueuePair {
 	int iNodeRef;
 	string path;
 };
+
+/*
+ * Caches (if not already cached) a directory and returns its index, returns -1 if none are found
+ */
+int Directory::getCachedDirectory(int iNodeNumber) {
+	for (int i=0;i<lastUsed;i++) {
+		if (cachedDirectory[i]->getINodeNumber() == iNodeNumber) return i;
+	}
+
+	while (freeCaches<1) {}
+	freeCaches--;
+
+	if (lastUsed<numberOfCachedDirectorys) {
+		lastUsed++;
+		oldest = (oldest+1)%numberOfCachedDirectorys;
+		cachedDirsUsed[lastUsed - 1] = true;
+		cachedDirectory[lastUsed - 1] = new CachedDirectory(iNodeNumber,hdd,superBlock,freeBlockList,iNodeList);
+		cachedDirectory[lastUsed - 1]->readCacheDirectory();
+		return lastUsed - 1;
+	} else {
+		while (true) {
+			if (!cachedDirsUsed[oldest]) {
+				cachedDirsUsed[oldest] = true;
+				delete cachedDirectory[oldest];
+				cachedDirectory[oldest] = new CachedDirectory(iNodeNumber,hdd,superBlock,freeBlockList,iNodeList);
+				cachedDirectory[oldest]->readCacheDirectory();
+				int retVal = oldest;
+				oldest = (oldest+1)%numberOfCachedDirectorys;
+				return retVal;
+			}
+			oldest = (oldest+1)%numberOfCachedDirectorys;
+		}
+	}
+	return -1;
+}
+
+void Directory::freeCachedDirectory(int i) {
+	if (cachedDirsUsed[i]) {
+		cachedDirsUsed[i] = false;
+		freeCaches++;
+	}
+}
 
 /*
  * Caches a tree of the disks directory structure
@@ -816,8 +767,8 @@ void Directory::cacheDirectoryTree() {
 
 	while (myQueue.size()>0) {
 		TreeQueuePair currentPair = myQueue.front();
-		cacheDirectory(rootINode);
-		for (const auto &pair : cachedDirectory) {
+		int dirCache = getCachedDirectory(rootINode);
+		for (const auto &pair : cachedDirectory[dirCache]->cache) {
 			if (iNodeList->isINodeDirectory(pair.second)) {
 				directoryTree->createDirectory(currentPair.path, pair.first, pair.second);
 				myQueue.push(TreeQueuePair{pair.second,currentPair.path + "/" + pair.first});
@@ -825,50 +776,6 @@ void Directory::cacheDirectoryTree() {
 		}
 		myQueue.pop();
 	}
-}
-
-/*
- * Returns the header from a directory block
- */
-DirectoryHeaderData Directory::readDirectoryHeader(int blockNumber) {
-	hdd->seek(getStartOfBlock(blockNumber));
-	DirectoryHeaderData directoryHeader;
-	for (int i=0;i<directoryHeaderSize;i++) {
-		directoryHeader.c[i] = hdd->read();
-	}
-	return directoryHeader;
-}
-
-/*
- * Returns all the names from the beginning of a directory block
- */
-string Directory::readDirectoryEntryNames(int blockNumber, int numberOfEntries, int endOfLastName) {
-	hdd->seek(getStartOfBlock(blockNumber) + directoryHeaderSize);
-	int nameLength = endOfLastName - directoryHeaderSize;
-	stringstream names;
-	for (int i=0;i<nameLength;i++) {
-		names << hdd->read();
-	}
-	return names.str();
-}
-
-/*
- * Returns a directory entry from an offset at the end of a directory block
- */
-DirectoryEntryData Directory::readDirectoryEntry(int blockNumber, int entryNumber) {
-	hdd->seek(getStartOfBlock(blockNumber+1) - ((entryNumber+1) * directoryEntrySize));
-	DirectoryEntryData directoryEntry;
-	for (int i=0;i<directoryEntrySize;i++) {
-		directoryEntry.c[i] = hdd->read();
-	}
-	return directoryEntry;
-}
-
-/*
- * Returns the starting position of a block
- */
-int Directory::getStartOfBlock(int blockNumber) {
-	return (superBlock->getFirstBlockStart() + (blockNumber * superBlock->getBlockSize()));
 }
 
 /*
